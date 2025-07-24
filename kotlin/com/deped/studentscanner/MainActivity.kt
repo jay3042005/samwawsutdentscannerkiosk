@@ -37,14 +37,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 // BLE and Bluetooth imports
-import com.deped.studentscanner.bluetooth.StudentScannerBleManager
-import com.deped.studentscanner.bluetooth.ScanLogTransferManager
-import com.deped.studentscanner.utils.QRCodeGenerator
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import com.deped.studentscanner.bluetooth.StudentScannerBleGattServer
-import com.deped.studentscanner.bluetooth.LogChunkBleAdvertiser
-import com.deped.studentscanner.bluetooth.StudentScannerLogChunkBleScanner
+
 
 // PocketBase extension functions for server-based duplicate detection
 // REMOVE: import com.deped.studentscanner.getScanLogs
@@ -111,12 +104,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var resetFlagReceiver: BroadcastReceiver
 
     // BLE and Bluetooth functionality for LOgger integration
-    private lateinit var bleManager: StudentScannerBleManager
-    private lateinit var scanLogTransferManager: ScanLogTransferManager
-    private var isQRCodeDisplayed = false
-    private var currentQRToken: String? = null
-    private var qrCodeDisplayCallback: ((String) -> Unit)? = null
-    private var hideQRCodeCallback: (() -> Unit)? = null
+
 
     private lateinit var localStorageManager: LocalStorageManager
 
@@ -175,15 +163,7 @@ class MainActivity : ComponentActivity() {
 
     private val qrTokenFlow = MutableStateFlow<String?>(null)
 
-    private val REQUIRED_PERMISSIONS = arrayOf(
-        Manifest.permission.BLUETOOTH,
-        Manifest.permission.BLUETOOTH_ADMIN,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    )
-    private val PERMISSION_REQUEST_CODE = 1001
 
-    private lateinit var bleGattServer: StudentScannerBleGattServer
-    private lateinit var logChunkBleAdvertiser: LogChunkBleAdvertiser
 
     // Deduplication cache for relayed logs
     private val recentlyRelayedLogIds = LinkedHashSet<Int>()
@@ -197,27 +177,7 @@ class MainActivity : ComponentActivity() {
 
     private var meshRelayJob: Job? = null
 
-    // Add BLE transfer state enum
-    private enum class BleTransferState {
-        IDLE, ADVERTISING, AWAITING_QR, AWAITING_TOKEN, TRANSFERRING, COMPLETE, ERROR
-    }
 
-    private var bleState: BleTransferState = BleTransferState.IDLE
-    private fun setBleState(newState: BleTransferState, message: String = "") {
-        bleState = newState
-        println("[BLE STATE] $bleState $message")
-        runOnUiThread {
-            when (bleState) {
-                BleTransferState.ADVERTISING -> Toast.makeText(this, "🔵 Waiting for Logger to connect...", Toast.LENGTH_SHORT).show()
-                BleTransferState.AWAITING_QR -> Toast.makeText(this, "📱 Logger connected. Displaying QR code...", Toast.LENGTH_SHORT).show()
-                BleTransferState.AWAITING_TOKEN -> Toast.makeText(this, "🔐 Waiting for Logger to scan QR...", Toast.LENGTH_SHORT).show()
-                BleTransferState.TRANSFERRING -> Toast.makeText(this, "📤 Transferring scan logs...", Toast.LENGTH_SHORT).show()
-                BleTransferState.COMPLETE -> Toast.makeText(this, "✅ Transfer complete!", Toast.LENGTH_SHORT).show()
-                BleTransferState.ERROR -> Toast.makeText(this, "❌ BLE error: $message", Toast.LENGTH_LONG).show()
-                else -> {}
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -236,8 +196,7 @@ class MainActivity : ComponentActivity() {
             println("[AUTO_START] 🔓 App started on device unlock")
         }
 
-        // Initialize BLE and Bluetooth functionality
-        initializeBluetooth()
+
 
         // Register broadcast receiver for server status updates
         val filter = IntentFilter().apply {
@@ -321,152 +280,12 @@ class MainActivity : ComponentActivity() {
         // Check auto-start preference and trigger if enabled
         
 
-        // Check BLE host mode preference and start advertising if enabled
-        scope.launch {
-            delay(2000) // Check after 2 seconds to ensure BLE is initialized
-            val blePrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-            val bleHostEnabled = blePrefs.getBoolean("bleHostEnabled", false)
-            if (bleHostEnabled) {
-                println("[BLE] 🔄 Auto-starting BLE advertising (previously enabled)")
-                if (::bleManager.isInitialized && checkBluetoothPermissions()) {
-                    // Stop any existing advertising first to prevent error code 3
-                    println("[BLE] 🛑 Stopping any existing advertising before auto-start...")
-                    bleManager.stopAdvertising()
-                    
-                    // Small delay to ensure advertising is fully stopped
-                    delay(500)
-                    
-                    bleManager.startAdvertising {
-                        setBleState(BleTransferState.ADVERTISING)
-                        println("[BLE] ✅ Auto-started BLE advertising successfully")
 
-                        // Start SPP server immediately when BLE advertising starts
-                        scope.launch {
-                            try {
-                                println("[BLE] 📡 Starting SPP server for Logger connections...")
-                                scanLogTransferManager.startTransferServer(
-                                    onLoggerConnected = { loggerAddress ->
-                                        setBleState(BleTransferState.AWAITING_QR)
-                                        scope.launch {
-                                            try {
-                                                println("[BLE] 🎯 Logger connected via SPP: $loggerAddress")
-                                                // Generate QR code token for authentication
-                                                currentQRToken = QRCodeGenerator.generateVerificationToken(loggerAddress, System.currentTimeMillis())
-                                                setBleState(BleTransferState.AWAITING_TOKEN)
-                                                println("[BLE] 🔐 Generated QR token: $currentQRToken")
-                                                // Display QR code for verification
-                                                displayQRCodeForVerification(currentQRToken!!)
-                                                // Set up timeout to hide QR code after 30 seconds
-                                                scope.launch {
-                                                    delay(30000)
-                                                    if (isQRCodeDisplayed) {
-                                                        hideQRCodeDisplay()
-                                                        setBleState(BleTransferState.ERROR, "QR code timeout. Restarting BLE...")
-                                                        restartBleAdvertisingWithDelay()
-                                                    }
-                                                }
-                                            } catch (e: Exception) {
-                                                setBleState(BleTransferState.ERROR, "Error handling Logger connection: ${e.message}")
-                                                cleanupBluetoothResources()
-                                                restartBleAdvertisingWithDelay()
-                                            }
-                                        }
-                                    },
-                                    onTransferComplete = { success, message ->
-                                        scope.launch {
-                                            try {
-                                                println("[BLE] Transfer result: $success - $message")
-                                                runOnUiThread {
-                                                    if (success) {
-                                                        setBleState(BleTransferState.COMPLETE)
-                                                        Toast.makeText(this@MainActivity, "✅ Scan logs transferred successfully!\n$message", Toast.LENGTH_LONG).show()
-                                                        // Auto-restart SPP/BLE server after successful transfer
-                                                        restartBleAdvertisingWithDelay()
-                                                    } else {
-                                                        setBleState(BleTransferState.ERROR, message)
-                                                        Toast.makeText(this@MainActivity, "❌ Scan log transfer failed: $message", Toast.LENGTH_LONG).show()
-                                                        restartBleAdvertisingWithDelay()
-                                                    }
-                                                }
-                                            } catch (e: Exception) {
-                                                setBleState(BleTransferState.ERROR, "Error during scan log transfer: ${e.message}")
-                                                cleanupBluetoothResources()
-                                                restartBleAdvertisingWithDelay()
-                                            }
-                                        }
-                                    }
-                                )
-                                println("[BLE] ✅ SPP server started successfully")
-                            } catch (e: Exception) {
-                                setBleState(BleTransferState.ERROR, "Error starting SPP server: ${e.message}")
-                                cleanupBluetoothResources()
-                                restartBleAdvertisingWithDelay()
-                            }
-                        }
-
-                        Toast.makeText(
-                            this@MainActivity,
-                            "🔵 BLE advertising auto-started\n📡 Logger devices can now detect this app",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                } else {
-                    println("[BLE] ❌ Cannot auto-start BLE advertising - missing permissions or BLE not initialized")
-                }
-            }
-        }
 
         // Request permissions at runtime
         if (!hasAllPermissions()) {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST_CODE)
-        } else {
-            startBleAndSpp()
-        }
 
-        // Set content
-        setContent {
-            val scannedStudent by getScannedStudentFlow().collectAsState()
-            val scanError by getScanErrorFlow().collectAsState()
-            val qrToken by qrTokenFlow.collectAsState()
-            var showSchoolSettings by remember { mutableStateOf(false) }
-            onVolumeUpPressed = { showSchoolSettings = true }
-            if (showSchoolSettings) {
-                AndroidSchoolSettingsScreen(onDismiss = { showSchoolSettings = false })
-            } else {
-                Box(Modifier.fillMaxSize()) {
-                    StudentScannerApp(
-                        scannedStudent = scannedStudent,
-                        scanError = scanError
-                    )
-                    if (qrToken != null) {
-                        QRCodeDialog(token = qrToken!!, onDismiss = { qrTokenFlow.value = null })
-                    }
-                }
-            }
-        }
-
-        // Start mesh scan-and-relay logic
-        meshRelayJob = CoroutineScope(Dispatchers.IO).launch {
-            while (isActive) {
-                val scanner = StudentScannerLogChunkBleScanner(this@MainActivity)
-                val advertiser = LogChunkBleAdvertiser(this@MainActivity, localStorageManager)
-                val scanCompleted = CompletableDeferred<Unit>()
-                scanner.startScan(
-                    onLogReceived = { logId, logJson ->
-                        if (!isRecentlyRelayed(logId)) {
-                            advertiser.startWithLog(logJson, logId)
-                            markRelayed(logId)
-                        }
-                        scanCompleted.complete(Unit)
-                    },
-                    onProgress = { /* Optionally log progress */ },
-                    onError = { scanCompleted.complete(Unit) }
-                )
-                // Wait for scan to complete or timeout
-                scanCompleted.await()
-                delay(5000) // Wait before next scan (tune as needed)
-            }
-        }
     }
 
     private fun hasAllPermissions(): Boolean {
@@ -478,71 +297,15 @@ class MainActivity : ComponentActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (hasAllPermissions()) {
-                startBleAndSpp()
-            } else {
+
                 println("[PERMISSION] Required permissions not granted. BLE/SPP will not start.")
             }
         }
     }
 
-    private fun startBleAndSpp() {
-        // Start BLE advertising
-        bleManager = StudentScannerBleManager(this)
-        bleManager.startAdvertising {
-            println("[BLE] Logger detected (simulated callback)")
-        }
-        // Start SPP server for log transfer
-        scanLogTransferManager = ScanLogTransferManager(this, localStorageManager)
-        lifecycleScope.launch {
-            scanLogTransferManager.startTransferServer(
-                onLoggerConnected = { loggerAddress ->
-                    println("[SPP] Logger connected: $loggerAddress")
-                },
-                onQrCodeRequested = { token ->
-                    println("[SPP] QR code requested, token: $token")
-                    qrTokenFlow.value = token
-                },
-                onTransferComplete = { success, message ->
-                    println("[SPP] Transfer complete: $success, $message")
-                    qrTokenFlow.value = null // Hide QR dialog
-                }
-            )
-        }
-        // Start BLE GATT server for log transfer
-        bleGattServer = StudentScannerBleGattServer(this, localStorageManager)
-        bleGattServer.startGattServer()
-        // Start BLE log chunk advertiser for mesh-style log transfer
-        logChunkBleAdvertiser = LogChunkBleAdvertiser(this, localStorageManager)
-        logChunkBleAdvertiser.start()
-    }
 
-    private fun cleanupBluetoothResources() {
-        // Clean up all Bluetooth resources robustly
-        try {
-            if (::bleManager.isInitialized) {
-                bleManager.stopAdvertising()
-                println("[BLE] BLE advertising stopped")
-            }
-            if (::scanLogTransferManager.isInitialized) {
-                scanLogTransferManager.stopTransferServer()
-                println("[BLE] SPP server stopped")
-            }
-            if (::bleGattServer.isInitialized) {
-                bleGattServer.stopGattServer()
-                println("[BLE] GATT server stopped")
-            }
-            if (::logChunkBleAdvertiser.isInitialized) {
-                logChunkBleAdvertiser.stop()
-                println("[BLE] Log chunk advertiser stopped")
-            }
-            meshRelayJob?.cancel()
-            println("[BLE] Mesh relay job cancelled")
-            println("[BLE] 🧹 All Bluetooth resources cleaned up")
-        } catch (e: Exception) {
-            println("[BLE] ❌ Error cleaning up Bluetooth resources: ${e.message}")
-        }
-    }
+
+
 
     private fun showServerStatus(status: String) {
         runOnUiThread {
@@ -573,7 +336,7 @@ class MainActivity : ComponentActivity() {
         val context = this
         val localStorageManager = remember { LocalStorageManager(context) }
         var schoolSettings by remember { mutableStateOf(SchoolSettings()) }
-        var bleHostEnabled by remember { mutableStateOf(true) }
+
 
         val scope = rememberCoroutineScope()
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -596,12 +359,11 @@ class MainActivity : ComponentActivity() {
                     if (saved) schoolSettings = defaultSettings
                 }
             }
-            bleHostEnabled = prefs.getBoolean("bleHostEnabled", false)
-        }
+
 
         ComprehensiveSettingsDialog(
             schoolSettings = schoolSettings,
-            bleHostEnabled = bleHostEnabled,
+
             onSchoolSettingsUpdate = { newSettings: SchoolSettings ->
                 scope.launch {
                     val saved = localStorageManager.saveSchoolTime(newSettings)
@@ -624,10 +386,7 @@ class MainActivity : ComponentActivity() {
             onOpenFilePicker = {
                 openPocketBaseFilePicker()
             },
-            onBleHostEnabledChange = { value ->
-                bleHostEnabled = value
-                prefs.edit().putBoolean("bleHostEnabled", value).apply()
-            },
+
             onDismiss = onDismiss
         )
     }
@@ -635,10 +394,10 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ComprehensiveSettingsDialog(
         schoolSettings: SchoolSettings,
-        bleHostEnabled: Boolean,
+
         onSchoolSettingsUpdate: (SchoolSettings) -> Unit,
         onOpenFilePicker: () -> Unit,
-        onBleHostEnabledChange: (Boolean) -> Unit,
+
         onDismiss: () -> Unit
     ) {
         var entryStartTime by remember { mutableStateOf("") }
@@ -675,6 +434,17 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        // DepEd Logo
+                        Image(
+                            painter = painterResource(id = R.drawable.deped_logo),
+                            contentDescription = "DepEd Logo",
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Fit
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         Text(
                             text = "⚙️ Comprehensive Settings",
                             fontSize = 24.sp,
@@ -813,16 +583,7 @@ class MainActivity : ComponentActivity() {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        
-
-                       
-                        SettingsSwitch(
-                            label = "Enable BLE Host Mode",
-                            description = "Advertise this device as a BLE host for scan log transfer.",
-                            checked = bleHostEnabled,
-                            onCheckedChange = onBleHostEnabledChange
-                        )
-                    }
+                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -2249,29 +2010,7 @@ Termux will now open. To start the PocketBase server:
             requiredPermissions.add(Manifest.permission.READ_PHONE_STATE)
         }
 
-        // BLE permissions
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
-            }
-        } else {
-            // Android 7-11
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADMIN) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_ADMIN)
-            }
-        }
-
-        // Location permissions (required for BLE on all versions)
+        // Location permissions
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             requiredPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -2301,11 +2040,9 @@ Termux will now open. To start the PocketBase server:
             ActivityCompat.requestPermissions(this, requiredPermissions.toTypedArray(), 101)
         } else {
             println("[PERMISSIONS] ✅ All permissions already granted")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
+            // Configure kiosk behavior if enabled
+            configureKioskBehavior()
+
             org.example.project.ui.setCurrentContext(this)
             setContent {
                 val scannedStudent by getScannedStudentFlow().collectAsState()
@@ -2320,7 +2057,6 @@ Termux will now open. To start the PocketBase server:
                 }
             }
         }
-    }
 
 
 
@@ -2761,25 +2497,7 @@ Termux will now open. To start the PocketBase server:
             requiredPermissions.add(Manifest.permission.READ_PHONE_STATE)
         }
 
-        // Bluetooth permissions
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_SCAN)
-            }
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADMIN) != PackageManager.PERMISSION_GRANTED) {
-                requiredPermissions.add(Manifest.permission.BLUETOOTH_ADMIN)
-            }
-        }
+
 
         // Location permissions
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -2802,11 +2520,9 @@ Termux will now open. To start the PocketBase server:
             ActivityCompat.requestPermissions(this, requiredPermissions.toTypedArray(), 101)
         } else {
             println("[PERMISSIONS] ✅ All permissions already granted")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
+            // Configure kiosk behavior if enabled
+            configureKioskBehavior()
+
             org.example.project.ui.setCurrentContext(this)
             setContent {
                 val scannedStudent by getScannedStudentFlow().collectAsState()
@@ -2821,28 +2537,8 @@ Termux will now open. To start the PocketBase server:
                 }
             }
         }
-    }
 
-    // Check Bluetooth permissions and request if needed
-    private fun checkBluetoothPermissions(): Boolean {
-        val hasBluetooth: Boolean
-        val hasLocation: Boolean
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            hasBluetooth = ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
-        } else {
-            hasBluetooth = ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED &&
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADMIN) == PackageManager.PERMISSION_GRANTED
-        }
-        hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val granted = hasBluetooth && hasLocation
-        if (!granted) {
-            println("[BLE] ❌ Missing BLE/Location permissions (Android 7/8/9/10/11/12+)")
-        }
-        return granted
-    }
+
 
     // Server-based student info retrieval from PocketBase
     private suspend fun getStudentInfoLocal(studentId: String): Map<String, Any>? {
@@ -2903,82 +2599,19 @@ Termux will now open. To start the PocketBase server:
         }
     }
 
-    // Initialize Bluetooth and BLE manager
-    private fun initializeBluetooth() {
-        try {
-            println("[BLE] 🔵 Initializing Bluetooth...")
-            
-            // Initialize BLE manager for advertising and communication
-            if (!::bleManager.isInitialized) {
-                bleManager = StudentScannerBleManager(this)
-                println("[BLE] ✅ BLE Manager initialized successfully")
-            } else {
-                println("[BLE] ℹ️ BLE Manager already initialized")
-            }
-            
-            // Initialize scan log transfer manager for SPP server
-            if (!::scanLogTransferManager.isInitialized) {
-                scanLogTransferManager = ScanLogTransferManager(this, localStorageManager)
-                println("[BLE] ✅ Scan Log Transfer Manager initialized successfully")
-            } else {
-                println("[BLE] ℹ️ Scan Log Transfer Manager already initialized")
-            }
-            
-        } catch (e: Exception) {
-            println("[BLE] ❌ Error initializing Bluetooth: ${e.message}")
-            e.printStackTrace()
+
+
+
+
+    private ssage}")
         }
     }
 
-    private fun displayQRCodeForVerification(token: String) {
-        try {
-            println("[QR] 📱 Displaying QR code for token: $token")
-            // Display QR code for verification
-            // This is a placeholder - implement based on your QR code display logic
-        } catch (e: Exception) {
-            println("[QR] ❌ Error displaying QR code: ${e.message}")
-        }
-    }
 
-    private fun hideQRCodeDisplay() {
-        try {
-            println("[QR] 🔒 Hiding QR code display")
-            // Hide QR code display
-            // This is a placeholder - implement based on your QR code display logic
-        } catch (e: Exception) {
-            println("[QR] ❌ Error hiding QR code: ${e.message}")
-        }
-    }
 
-    private fun startScanLogTransfer(deviceId: String) {
-        try {
-            println("[TRANSFER] 🔄 Starting scan log transfer for device: $deviceId")
-            // Start scan log transfer process
-            // This is a placeholder - implement based on your transfer logic
-        } catch (e: Exception) {
-            println("[TRANSFER] ❌ Error starting transfer: ${e.message}")
-        }
-    }
 
-    private fun verifyQRTokenAndTransfer(token: String, deviceId: String) {
-        try {
-            println("[VERIFY] 🔍 Verifying QR token and starting transfer: $token for device: $deviceId")
-            // Verify QR token and initiate transfer
-            // This is a placeholder - implement based on your verification logic
-        } catch (e: Exception) {
-            println("[VERIFY] ❌ Error verifying token: ${e.message}")
-        }
-    }
 
-    private fun setQRCodeCallbacks(displayCallback: (String) -> Unit, hideCallback: () -> Unit) {
-        try {
-            println("[QR] 🔗 Setting QR code callbacks")
-            // Set QR code display and hide callbacks
-            // This is a placeholder - implement based on your callback logic
-        } catch (e: Exception) {
-            println("[QR] ❌ Error setting callbacks: ${e.message}")
-        }
-    }
+
 
     // Time format conversion functions
     private fun convertTo12HourFormat(time24: String): String {
@@ -3019,11 +2652,9 @@ Termux will now open. To start the PocketBase server:
     private fun continueAppInitialization() {
         try {
             println("[INIT] 🚀 Continuing app initialization...")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
+            // Configure kiosk behavior if enabled
+            configureKioskBehavior()
+
             org.example.project.ui.setCurrentContext(this)
             setContent {
                 val scannedStudent by getScannedStudentFlow().collectAsState()
@@ -3036,8 +2667,7 @@ Termux will now open. To start the PocketBase server:
                 if (qrToken != null) {
                     QRCodeDialog(token = qrToken!!, onDismiss = { qrTokenFlow.value = null })
                 }
-            }
-        } catch (e: Exception) {
+            } catch (e: Exception) {
             println("[INIT] ❌ Error continuing initialization: ${e.message}")
         }
     }
@@ -3299,7 +2929,6 @@ Termux will now open. To start the PocketBase server:
             unregisterReceiver(resetFlagReceiver)
         } catch (_: Exception) {}
         super.onDestroy()
-        cleanupBluetoothResources()
     }
 
     // End of MainActivity class
@@ -3323,15 +2952,4 @@ fun QRCodeDialog(token: String, onDismiss: () -> Unit) {
     }
 }
 
-private fun restartBleAdvertisingWithDelay(delayMs: Long = 2000) {
-    scope.launch {
-        cleanupBluetoothResources()
-        setBleState(BleTransferState.IDLE)
-        delay(delayMs)
-        try {
-            startBleAndSpp()
-        } catch (e: Exception) {
-            setBleState(BleTransferState.ERROR, "Failed to restart BLE: ${e.message}")
-        }
-    }
-}
+

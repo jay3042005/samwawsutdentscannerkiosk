@@ -16,10 +16,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import com.deped.studentscanner.bluetooth.StudentScannerBleManager
-import com.deped.studentscanner.bluetooth.ScanLogTransferManager
+
 import com.studentscanner.data.LocalStorageManager
-import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.deped.studentscanner.R
 import kotlinx.serialization.encodeToString
 import org.example.project.data.ScanLog
 import kotlinx.serialization.builtins.ListSerializer
@@ -57,150 +58,129 @@ fun setCurrentContext(context: Context) {
 private fun getCurrentContext(): Context? = currentContext 
 
 // Android-specific BLE host implementation
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+
 @Composable
-actual fun PlatformBLEHostSection(
-    bleHostEnabled: Boolean,
-    onBleHostToggle: (Boolean) -> Unit
+fun StudentScannerApp(
+    scannedStudent: StudentResponse?,
+    scanError: String?,
+    onQRCodeDismiss: () -> Unit = {},
+    onStudentDismissed: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val bleManager = remember { StudentScannerBleManager(context) }
     val localStorageManager = remember { LocalStorageManager(context) }
-    val scanLogTransferManager = remember { ScanLogTransferManager(context, localStorageManager) }
+    var showSchoolSettings by remember { mutableStateOf(false) }
+    var showQRCodeDisplay by remember { mutableStateOf(false) }
+    var qrCodeBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    // State for QR code dialog
-    var showQrDialog by remember { mutableStateOf(false) }
-    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var sessionToken by remember { mutableStateOf("") }
-    var qrDialogError by remember { mutableStateOf<String?>(null) }
-
-    // On first composition, read persisted BLE Host state from SharedPreferences
+    // Load school settings for display
+    var schoolSettings by remember { mutableStateOf(SchoolSettings()) }
     LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-        val savedBleHostEnabled = prefs.getBoolean("bleHostEnabled", false)
-        if (savedBleHostEnabled != bleHostEnabled) {
-            onBleHostToggle(savedBleHostEnabled)
-        }
-    }
-    
-    // Persist BLE Host toggle to SharedPreferences when changed
-    LaunchedEffect(bleHostEnabled) {
-        val prefs = context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("bleHostEnabled", bleHostEnabled).apply()
-    }
-
-    // Start/stop BLE advertising based on toggle
-    LaunchedEffect(bleHostEnabled) {
-        if (bleHostEnabled) {
-            bleManager.startAdvertising {
-                // Receiver detected!
-                coroutineScope.launch {
-                    // Start Bluetooth SPP server - QR code will be shown when Logger connects
-                    scanLogTransferManager.startTransferServer(
-                        onLoggerConnected = { loggerAddress ->
-                            coroutineScope.launch {
-                                try {
-                                    println("[BLE HOST] 🎯 Logger connected: $loggerAddress")
-                                    // Generate session token and QR code
-                                    sessionToken = java.util.UUID.randomUUID().toString()
-                                    val generatedBitmap = com.deped.studentscanner.utils.QRCodeGenerator.generateQRCode(sessionToken)
-                                    if (generatedBitmap != null) {
-                                        qrBitmap = generatedBitmap
-                                        showQrDialog = true
-                                        println("[BLE HOST] 🔐 Generated QR token: $sessionToken")
-                                    } else {
-                                        qrDialogError = "Failed to generate QR code bitmap."
-                                        println("[BLE HOST] ❌ QR code bitmap generation failed!")
-                                    }
-                                } catch (e: Exception) {
-                                    println("[BLE HOST] ❌ Error handling Logger connection: ${e.message}")
-                                    e.printStackTrace()
-                                }
-                            }
-                        },
-                        onTransferComplete = { success, message ->
-                            if (success) {
-                                println("[BLE HOST] Bluetooth SPP transfer completed: $message")
-                            } else {
-                                println("[BLE HOST] Bluetooth SPP transfer failed: $message")
-                            }
-                        }
-                    )
-                }
-            }
-        } else {
-            bleManager.stopAdvertising()
-            showQrDialog = false
+        val loaded = localStorageManager.loadSchoolTime()
+        if (loaded != null) {
+            schoolSettings = loaded
         }
     }
 
-    // After QR code is scanned and verified by receiver, start Bluetooth SPP transfer
-    fun onQrVerifiedByReceiver() {
-        coroutineScope.launch {
-            scanLogTransferManager.startTransferServer(
-                onLoggerConnected = { loggerAddress ->
-                    println("[BLE HOST] 🎯 Logger connected: $loggerAddress")
-                },
-                onQrCodeRequested = { loggerAddress ->
-                    // Show QR code only when Logger requests it (perfect for kiosk mode)
-                    coroutineScope.launch {
-                        try {
-                            println("[BLE HOST] 🔐 Logger requested QR code, showing dialog: $loggerAddress")
-                            sessionToken = java.util.UUID.randomUUID().toString()
-                            qrBitmap = com.deped.studentscanner.utils.QRCodeGenerator.generateQRCode(sessionToken)
-                            showQrDialog = true
-                            println("[BLE HOST] 🔐 Generated QR token for kiosk: $sessionToken")
-                        } catch (e: Exception) {
-                            println("[BLE HOST] ❌ Error generating QR code: ${e.message}")
-                            e.printStackTrace()
-                        }
-                    }
-                },
-                onTransferComplete = { success, message ->
-                    if (success) {
-                        println("[BLE HOST] Bluetooth SPP transfer completed: $message")
-                    } else {
-                        println("[BLE HOST] Bluetooth SPP transfer failed: $message")
-                    }
-                }
-            )
-        }
-    }
-
-    // Auto-hide QR dialog after 10 seconds
-    LaunchedEffect(showQrDialog) {
-        if (showQrDialog) {
-            println("[BLE HOST] ⏰ QR dialog shown, will auto-hide in 10 seconds")
-            kotlinx.coroutines.delay(10000) // 10 seconds
-            if (showQrDialog) { // Check if still showing
-                showQrDialog = false
-                qrBitmap = null
-                println("[BLE HOST] ⏰ QR dialog auto-hidden after 10 seconds")
-            }
-        }
-    }
-
-    // Show QR code dialog when needed
-    if (showQrDialog && qrBitmap != null) {
-        QRCodeDisplayDialog(
-            qrCodeBitmap = qrBitmap!!,
-            onDismiss = {
-                showQrDialog = false
-                qrBitmap = null
-                println("[BLE HOST] 🔐 QR dialog manually dismissed")
-            }
+    // Show school settings dialog if triggered
+    if (showSchoolSettings) {
+        AndroidSchoolSettingsScreen(
+            onDismiss = { showSchoolSettings = false }
         )
-    }
-    // Show error notification if dialog fails
-    if (qrDialogError != null) {
-        // Fallback: show a toast or log error
-        LaunchedEffect(qrDialogError) {
-            val ctx = currentContext
-            if (ctx != null) {
-                android.widget.Toast.makeText(ctx, qrDialogError, android.widget.Toast.LENGTH_LONG).show()
+    } else if (showQRCodeDisplay && qrCodeBitmap != null) {
+        QRCodeDisplayDialog(
+            qrCodeBitmap = qrCodeBitmap!!,
+            onDismiss = onQRCodeDismiss
+        )
+    } else {
+        // Main Student Scanner App         Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // DepEd Logo
+                Image(
+                    painter = painterResource(id = R.drawable.deped_logo),
+                    contentDescription = "DepEd Logo",
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Fit
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Original content of StudentScannerApp
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Department of Education",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Student Scanner Kiosk",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Display scanned student info or error
+                    if (scannedStudent != null) {
+                        StudentInfoCard(scannedStudent) {
+                            onStudentDismissed()
+                        }
+                    } else if (scanError != null) {
+                        ErrorCard(scanError)
+                    } else {
+                        Text(
+                            text = "Scan a student ID to begin",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Buttons for settings and manual input
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(
+                            onClick = { showSchoolSettings = true },
+                            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+                        ) {
+                            Text("Settings")
+                        }
+                        Button(
+                            onClick = { /* Trigger manual input dialog in MainActivity */ },
+                            modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+                        ) {
+                            Text("Manual Input")
+                        }
+                    }
+                }
             }
-            println("[BLE HOST] ❌ QR dialog error: $qrDialogError")
-            qrDialogError = null
         }
     }
-} 
+}
+
+@Preview(showBackground = true)
+@Composable
+fun DefaultPreview() {
+    StudentScannerApp(
+        scannedStudent = null,
+        scanError = null
+    )
+}
