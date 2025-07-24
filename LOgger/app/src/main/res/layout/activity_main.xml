@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1E1E1E"
+    tools:context=".MainActivity">
+
+    <!-- Status Bar Background -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="24dp"
+        android:background="#1E1E1E" />
+
+    <!-- Top Action Icons -->
+    <LinearLayout
+        android:id="@+id/topActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:layout_marginTop="40dp"
+        android:layout_marginEnd="24dp"
+        android:orientation="horizontal">
+
+        <!-- History Icon -->
+        <ImageView
+            android:id="@+id/historyIcon"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/circle_icon_bg"
+            android:src="@drawable/ic_history"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- Info Icon -->
+        <ImageView
+            android:id="@+id/infoIcon"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/circle_icon_bg"
+            android:src="@drawable/ic_info"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+    </LinearLayout>
+
+    <!-- Central Scanning Circle -->
+    <RelativeLayout
+        android:id="@+id/centralContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true">
+
+        <!-- Outer Animated Ring -->
+        <FrameLayout
+            android:id="@+id/outerRing"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_centerInParent="true">
+
+            <!-- Animated Ring Segments -->
+            <View
+                android:id="@+id/ringSegment1"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/ring_segment" />
+
+        </FrameLayout>
+
+        <!-- Inner Circle Button -->
+        <FrameLayout
+            android:id="@+id/startServiceButton"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_centerInParent="true"
+            android:background="@drawable/central_circle_bg"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/scanButtonText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="SCAN LOG"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.1" />
+
+        </FrameLayout>
+
+    </RelativeLayout>
+
+    <!-- App Title -->
+    <LinearLayout
+        android:id="@+id/titleContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/centralContainer"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="48dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Logger Receiver"
+            android:textColor="#FFFFFF"
+            android:textSize="32sp"
+            android:textStyle="normal"
+            android:fontFamily="sans-serif-light" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Ready to receive scan logs"
+            android:textColor="#80FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="normal" />
+
+    </LinearLayout>
+
+    <!-- Bottom Actions -->
+    <LinearLayout
+        android:id="@+id/bottomActions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="32dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <!-- Receive Button -->
+        <LinearLayout
+            android:id="@+id/receiveButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="16dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bottom_action_bg">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_receive"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Receive"
+                android:textColor="#80FFFFFF"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <!-- Send Button -->
+        <LinearLayout
+            android:id="@+id/sendButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="16dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bottom_action_bg">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_send"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Send"
+                android:textColor="#80FFFFFF"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <!-- Settings Button -->
+        <LinearLayout
+            android:id="@+id/viewReceivedLogsButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="16dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="@drawable/bottom_action_bg">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_settings"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Logs"
+                android:textColor="#80FFFFFF"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Scanning overlay -->
+    <include layout="@layout/scanning_overlay" />
+
+    <Button
+        android:id="@+id/downloadButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Download Logs via BLE"
+        android:layout_marginTop="24dp"/>
+
+    <TextView
+        android:id="@+id/progressTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status will appear here"
+        android:layout_marginTop="12dp"/>
+
+</RelativeLayout>

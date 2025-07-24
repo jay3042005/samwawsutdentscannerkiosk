@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">LOgger</string>
+    <!-- Scan Logs Activity -->
+    <string name="scan_logs">Scan Logs</string>
+    <string name="export_logs">Export Logs</string>
+    <string name="no_logs_found">No scan logs found</string>
+    <string name="all_logs">All Logs</string>
+    <string name="by_grade">By Grade</string>
+    <string name="by_date">By Date</string>
+</resources>

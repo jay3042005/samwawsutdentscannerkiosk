@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/scanningOverlay"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#80000000"
+    android:visibility="gone"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Blur background effect -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000" />
+
+    <!-- Scanning content -->
+    <LinearLayout
+        android:id="@+id/scanningContent"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp"
+        android:background="@drawable/scanning_card_bg">
+
+        <!-- Animated scanning icon -->
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:id="@+id/scanningProgress"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_marginBottom="24dp"
+            app:indicatorColor="#6200EA"
+            app:trackColor="#E0E0E0"
+            app:trackThickness="4dp"
+            app:indicatorSize="64dp"
+            android:indeterminate="true" />
+
+        <!-- Status text -->
+        <TextView
+            android:id="@+id/scanningStatusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Scanning for Student App..."
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:gravity="center"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Sub status text -->
+        <TextView
+            android:id="@+id/scanningSubStatusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Detecting BLE devices..."
+            android:textSize="14sp"
+            android:textColor="#CCFFFFFF"
+            android:gravity="center"
+            android:alpha="0.8" />
+
+    </LinearLayout>
+
+    <!-- Camera Preview Container (Initially Hidden) -->
+    <FrameLayout
+        android:id="@+id/cameraContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        android:background="#000000">
+
+        <!-- Camera Preview -->
+        <androidx.camera.view.PreviewView
+            android:id="@+id/cameraPreview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- QR Scanning Overlay -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <!-- Semi-transparent overlay with cutout for scanning area -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#80000000" />
+
+            <!-- Scanning frame -->
+            <FrameLayout
+                android:layout_width="280dp"
+                android:layout_height="280dp"
+                android:layout_gravity="center"
+                android:background="@drawable/scan_box_overlay">
+
+                <!-- Animated scanning line -->
+                <View
+                    android:id="@+id/scanningLine"
+                    android:layout_width="match_parent"
+                    android:layout_height="2dp"
+                    android:background="#6200EA"
+                    android:layout_marginStart="20dp"
+                    android:layout_marginEnd="20dp"
+                    android:alpha="0.8" />
+
+            </FrameLayout>
+
+            <!-- Instructions -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|center_horizontal"
+                android:layout_marginBottom="120dp"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="@drawable/scanning_card_bg"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Scan QR Code"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:gravity="center"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Position the QR code within the frame"
+                    android:textSize="14sp"
+                    android:textColor="#CCFFFFFF"
+                    android:gravity="center" />
+
+            </LinearLayout>
+
+            <!-- Cancel button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cancelScanButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_gravity="bottom|center_horizontal"
+                android:layout_marginBottom="40dp"
+                android:text="CANCEL"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#44FFFFFF"
+                app:cornerRadius="24dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp" />
+
+        </FrameLayout>
+
+    </FrameLayout>
+
+</FrameLayout>
